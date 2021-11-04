@@ -29,26 +29,16 @@ func UnaryServerInterceptor(m *ServerMetrics) grpc.UnaryServerInterceptor {
 		if m.handlingHistogram {
 			started = time.Now()
 		}
-		service, method := serviceAndMethod(info.FullMethod)
-		m.counter(metricServerStarted,
-			false, false, service, method, noCode,
-		).Inc()
-		m.counter(metricServerMsgReceived,
-			false, false, service, method, noCode,
-		).Inc()
+		typ, service, method := keys(info.FullMethod, false, false)
+		m.counter(metricServerStarted, typ, service, method, noCode).Inc()
+		m.counter(metricServerMsgReceived, typ, service, method, noCode).Inc()
 		res, err := handler(ctx, req)
-		m.counter(metricServerHandled,
-			false, false, service, method, status.Code(err),
-		).Inc()
+		m.counter(metricServerHandled, typ, service, method, status.Code(err)).Inc()
 		if err == nil {
-			m.counter(metricServerMsgSent,
-				false, false, service, method, noCode,
-			).Inc()
+			m.counter(metricServerMsgSent, typ, service, method, noCode).Inc()
 		}
 		if m.handlingHistogram {
-			m.histogram(metricServerHandling,
-				false, false, service, method,
-			).UpdateDuration(started)
+			m.histogram(metricServerHandling, typ, service, method).UpdateDuration(started)
 		}
 		return res, err
 	}
@@ -65,26 +55,16 @@ func StreamServerInterceptor(m *ServerMetrics) grpc.StreamServerInterceptor {
 		if m.handlingHistogram {
 			started = time.Now()
 		}
-		service, method := serviceAndMethod(info.FullMethod)
-		m.counter(metricServerStarted,
-			info.IsServerStream, info.IsClientStream, service, method, noCode,
-		).Inc()
+		typ, service, method := keys(info.FullMethod, info.IsServerStream, info.IsClientStream)
+		m.counter(metricServerStarted, typ, service, method, noCode).Inc()
 		err := handler(srv, &serverStream{
 			ss,
-			m.counter(metricServerMsgSent,
-				info.IsServerStream, info.IsClientStream, service, method, noCode,
-			),
-			m.counter(metricServerMsgReceived,
-				info.IsServerStream, info.IsClientStream, service, method, noCode,
-			),
+			m.counter(metricServerMsgSent, typ, service, method, noCode),
+			m.counter(metricServerMsgReceived, typ, service, method, noCode),
 		})
-		m.counter(metricServerHandled,
-			info.IsServerStream, info.IsClientStream, service, method, status.Code(err),
-		).Inc()
+		m.counter(metricServerHandled, typ, service, method, status.Code(err)).Inc()
 		if m.handlingHistogram {
-			m.histogram(metricServerHandling,
-				info.IsServerStream, info.IsClientStream, service, method,
-			).UpdateDuration(started)
+			m.histogram(metricServerHandling, typ, service, method).UpdateDuration(started)
 		}
 		return err
 	}
@@ -133,20 +113,13 @@ type ServerMetrics struct {
 	handlingHistogram bool
 }
 
-func (m *ServerMetrics) Initialize(s *grpc.Server) {
+func (m *ServerMetrics) InitializeMetrics(s *grpc.Server) {
 	for service, info := range s.GetServiceInfo() {
 		for _, method := range info.Methods {
-			_ = m.counter(metricServerStarted,
-				method.IsServerStream, method.IsClientStream, service, method.Name, noCode,
-			)
-			if method.IsServerStream || method.IsClientStream {
-				_ = m.counter(metricServerMsgSent,
-					method.IsServerStream, method.IsClientStream, service, method.Name, noCode,
-				)
-				_ = m.counter(metricServerMsgReceived,
-					method.IsServerStream, method.IsClientStream, service, method.Name, noCode,
-				)
-			}
+			typ := kind(method.IsServerStream, method.IsClientStream)
+			_ = m.counter(metricServerStarted, typ, service, method.Name, noCode)
+			_ = m.counter(metricServerMsgSent, typ, service, method.Name, noCode)
+			_ = m.counter(metricServerMsgReceived, typ, service, method.Name, noCode)
 			for _, code := range [...]codes.Code{
 				codes.OK, codes.Canceled, codes.Unknown, codes.InvalidArgument,
 				codes.DeadlineExceeded, codes.NotFound, codes.AlreadyExists,
@@ -154,14 +127,10 @@ func (m *ServerMetrics) Initialize(s *grpc.Server) {
 				codes.Aborted, codes.OutOfRange, codes.Unimplemented, codes.Internal,
 				codes.Unavailable, codes.DataLoss, codes.Unauthenticated,
 			} {
-				_ = m.counter(metricServerHandled,
-					method.IsServerStream, method.IsClientStream, service, method.Name, code,
-				)
+				_ = m.counter(metricServerHandled, typ, service, method.Name, code)
 			}
 			if m.handlingHistogram {
-				_ = m.histogram(metricServerHandling,
-					method.IsServerStream, method.IsClientStream, service, method.Name,
-				)
+				_ = m.histogram(metricServerHandling, typ, service, method.Name)
 			}
 		}
 	}

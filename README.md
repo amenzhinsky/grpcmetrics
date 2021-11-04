@@ -21,7 +21,7 @@ s := grpc.NewServer(
 grpc_health_v1.RegisterHealthServer(s, health.NewServer())
 
 // optionally pre-populate metrics with services and methods registered by the server
-m.Initialize(s)
+m.Register(s)
 
 http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 	m.WritePrometheus(w)

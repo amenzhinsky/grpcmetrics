@@ -5,17 +5,23 @@ import (
 	"io"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/VictoriaMetrics/metrics"
 	"google.golang.org/grpc/codes"
 )
 
 func newSet() set {
-	return set{s: metrics.NewSet()}
+	return set{
+		s:  metrics.NewSet(), // TODO: optionally use metrics.defaultSet if it gets exported
+		mc: map[string]map[string]map[string]map[codes.Code]interface{}{},
+	}
 }
 
 type set struct {
-	s *metrics.Set
+	s  *metrics.Set
+	mu sync.RWMutex
+	mc map[string]map[string]map[string]map[codes.Code]interface{} // TODO: use metrics.Metric interface
 }
 
 func (s *set) WritePrometheus(w io.Writer) {
@@ -23,59 +29,98 @@ func (s *set) WritePrometheus(w io.Writer) {
 }
 
 func (s *set) counter(
-	name string, serverStream, clientStream bool, service, method string, code codes.Code,
+	name string, typ, service, method string, code codes.Code,
 ) *metrics.Counter {
-	return s.s.GetOrCreateCounter(mkname(
-		name, serverStream, clientStream, service, method, code,
-	))
+	return s.metric(name, typ, service, method, code, func(name string) interface{} {
+		return s.s.NewCounter(name)
+	}).(*metrics.Counter)
 }
 
 func (s *set) histogram(
-	name string, serverStream, clientStream bool, service, method string,
+	name string, typ, service, method string,
 ) *metrics.Histogram {
-	return s.s.GetOrCreateHistogram(mkname(
-		name, serverStream, clientStream, service, method, noCode,
-	))
+	return s.metric(name, typ, service, method, noCode, func(name string) interface{} {
+		return s.s.NewHistogram(name)
+	}).(*metrics.Histogram)
 }
 
 const noCode = math.MaxUint32
 
-//var (
-//	mu    = sync.Mutex{}
-//	cache = map[string]map[string]map[string]map[string]map[codes.Code]string{}
-//)
+func (s *set) metric(
+	name string, typ, service, method string, code codes.Code,
+	fn func(name string) interface{},
+) interface{} {
+	s.mu.RLock() // try read lock first and promote to write lock if needed
+	var locked bool
+	defer func() {
+		if locked {
+			s.mu.Unlock()
+		} else {
+			s.mu.RUnlock()
+		}
+	}()
 
-func mkname(
-	name string, serverStream, clientStream bool, service, method string, code codes.Code,
-) string {
-	typ := kind(serverStream, clientStream)
-	//if x := cache[name]; x != nil {
-	//	if x := x[typ]; x != nil {
-	//		if x := x[service]; x != nil {
-	//			if x := x[method]; x != nil {
-	//				if x := x[code]; x != "" {
-	//					return x
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-
-	var b strings.Builder
-	b.Grow(4096)
-	b.WriteString(name)
-	b.WriteString(`{grpc_type="`)
-	b.WriteString(typ)
-	b.WriteString(`",grpc_service="`)
-	b.WriteString(service)
-	b.WriteString(`",grpc_method="`)
-	b.WriteString(method)
-	if code < noCode {
-		b.WriteString(`",grpc_code="`)
-		b.WriteString(code.String())
+	names, ok := s.mc[name]
+	if !ok {
+		if s.lock(&locked) || s.mc[name] == nil {
+			s.mc[name] = map[string]map[string]map[codes.Code]interface{}{}
+		}
+		names = s.mc[name]
 	}
-	b.WriteString(`"}`)
-	return b.String()
+	services, ok := names[service]
+	if !ok {
+		if s.lock(&locked) || names[service] == nil {
+			names[service] = map[string]map[codes.Code]interface{}{}
+		}
+		services = names[service]
+	}
+	methods, ok := services[method]
+	if !ok {
+		if s.lock(&locked) || services[method] == nil {
+			services[method] = map[codes.Code]interface{}{}
+		}
+		methods = services[method]
+	}
+	metric, ok := methods[code]
+	if !ok {
+		if s.lock(&locked) || methods[code] == nil {
+			var b strings.Builder
+			b.Grow(4096) // should be enough for almost all metric names
+			b.WriteString(name)
+			b.WriteString(`{grpc_type="`)
+			b.WriteString(typ)
+			b.WriteString(`",grpc_service="`)
+			b.WriteString(service)
+			b.WriteString(`",grpc_method="`)
+			b.WriteString(method)
+			if code < noCode {
+				b.WriteString(`",grpc_code="`)
+				b.WriteString(code.String())
+			}
+			b.WriteString(`"}`)
+			methods[code] = fn(b.String())
+		}
+		metric = methods[code]
+	}
+	return metric
+}
+
+func (s *set) lock(locked *bool) bool {
+	if *locked {
+		return true
+	}
+	s.mu.RUnlock()
+	s.mu.Lock()
+	*locked = true
+	return false
+}
+
+func keys(s string, isServerStream, isClientStream bool) (string, string, string) {
+	if len(s) == 0 || s[0] != '/' {
+		panic(fmt.Sprintf("malformed full method: %s", s))
+	}
+	i := strings.IndexByte(s[1:], '/')
+	return kind(isServerStream, isClientStream), s[:i+1], s[i+2:]
 }
 
 func kind(server, client bool) string {
@@ -89,12 +134,4 @@ func kind(server, client bool) string {
 	default:
 		return "unary"
 	}
-}
-
-func serviceAndMethod(s string) (string, string) {
-	if len(s) == 0 || s[0] != '/' {
-		panic(fmt.Sprintf("malformed full method: %s", s))
-	}
-	i := strings.IndexByte(s[1:], '/')
-	return s[:i+1], s[i+1+1:]
 }
