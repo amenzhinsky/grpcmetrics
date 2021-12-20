@@ -13,7 +13,7 @@ import (
 
 func newSet() set {
 	return set{
-		s:  metrics.NewSet(), // TODO: optionally use metrics.defaultSet if it gets exported
+		s:  metrics.NewSet(),
 		mc: map[string]map[string]map[string]map[codes.Code]interface{}{},
 	}
 }
@@ -25,6 +25,9 @@ type set struct {
 }
 
 func (s *set) WritePrometheus(w io.Writer) {
+	if s.s == nil {
+		panic("cannot use this method with the default metrics set use metrics.WritePrometheus instead")
+	}
 	s.s.WritePrometheus(w)
 }
 
@@ -32,6 +35,9 @@ func (s *set) counter(
 	name string, typ, service, method string, code codes.Code,
 ) *metrics.Counter {
 	return s.metric(name, typ, service, method, code, func(name string) interface{} {
+		if s.s == nil {
+			return metrics.NewCounter(name)
+		}
 		return s.s.NewCounter(name)
 	}).(*metrics.Counter)
 }
@@ -40,6 +46,9 @@ func (s *set) histogram(
 	name string, typ, service, method string,
 ) *metrics.Histogram {
 	return s.metric(name, typ, service, method, noCode, func(name string) interface{} {
+		if s.s == nil {
+			return metrics.NewHistogram(name)
+		}
 		return s.s.NewHistogram(name)
 	}).(*metrics.Histogram)
 }

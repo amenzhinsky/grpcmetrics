@@ -6,6 +6,7 @@ import (
 
 	"github.com/VictoriaMetrics/metrics"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -52,11 +53,14 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 		cs, err := streamer(ctx, desc, cc, method, opts...)
 		if err != nil {
 			m.counter(metricClientHandled, typ, service, method, status.Code(err)).Inc()
+			return nil, err
 		}
 		return &clientStream{
 			cs,
 			m.counter(metricClientMsgSent, typ, service, method, noCode),
 			m.counter(metricClientMsgReceived, typ, service, method, noCode),
+			m,
+			typ, service, method,
 		}, err
 	}
 }
@@ -65,6 +69,9 @@ type clientStream struct {
 	grpc.ClientStream
 	send *metrics.Counter
 	recv *metrics.Counter
+
+	m                    *ClientMetrics
+	typ, service, method string
 }
 
 func (s *clientStream) SendMsg(m interface{}) error {
@@ -81,9 +88,9 @@ func (s *clientStream) RecvMsg(m interface{}) error {
 	case nil:
 		s.recv.Inc()
 	case io.EOF:
-		// TODO: s.done.Inc(codes.Ok)
+		s.m.counter(metricClientHandled, s.typ, s.service, s.method, codes.OK).Inc()
 	default:
-		// TODO: s.done.Inc(status.Code(err))
+		s.m.counter(metricClientHandled, s.typ, s.service, s.method, status.Code(err)).Inc()
 	}
 	return err
 }
@@ -93,6 +100,12 @@ type ClientOption func(m *ClientMetrics)
 func WithClientHandlingTimeHistogram(enabled bool) ClientOption {
 	return func(m *ClientMetrics) {
 		m.handlingHistogram = enabled
+	}
+}
+
+func WithClientMetricsSet(set *metrics.Set) ClientOption {
+	return func(m *ClientMetrics) {
+		m.set.s = set
 	}
 }
 

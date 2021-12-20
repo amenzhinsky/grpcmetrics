@@ -100,6 +100,12 @@ func WithServerHandlingTimeHistogram(enabled bool) ServerOption {
 	}
 }
 
+func WithServerMetricsSet(set *metrics.Set) ServerOption {
+	return func(m *ServerMetrics) {
+		m.set.s = set
+	}
+}
+
 func NewServerMetrics(opts ...ServerOption) *ServerMetrics {
 	s := &ServerMetrics{set: newSet()}
 	for _, opt := range opts {

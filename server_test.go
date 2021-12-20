@@ -3,7 +3,7 @@ package grpcmetrics
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,9 +29,7 @@ func TestUnaryServerInterceptor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var b bytes.Buffer
-	m.WritePrometheus(&b)
-	checkContains(t, &b,
+	checkContains(t, m,
 		`grpc_server_started_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 1`,
 		`grpc_server_handled_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
 	)
@@ -47,10 +45,7 @@ func TestStreamServerInterceptor(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	var b bytes.Buffer
-	m.WritePrometheus(&b)
-	checkContains(t, &b,
+	checkContains(t, m,
 		`grpc_server_started_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,
 		`grpc_server_handled_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 1`,
 	)
@@ -133,11 +128,13 @@ func benchStreamServerInterceptor(b *testing.B, h grpc.StreamServerInterceptor) 
 	})
 }
 
-func checkContains(t *testing.T, s fmt.Stringer, what ...string) {
+func checkContains(t *testing.T, m interface{ WritePrometheus(w io.Writer) }, what ...string) {
 	t.Helper()
+	var b bytes.Buffer
+	m.WritePrometheus(&b)
 	for i := range what {
-		if !strings.Contains(s.String(), what[i]) {
-			t.Fatalf("output doesn't contain: %s", what[i])
+		if !strings.Contains(b.String(), what[i]) {
+			t.Fatalf("output doesn't contain: %s\n%s", what[i], b.String())
 		}
 	}
 }

@@ -1,5 +1,9 @@
 # grpcmetrics
 
+Prometheus metrics for gGPC servers and clients via [VictoriaMetrics](https://github.com/VictoriaMetrics/metrics).
+
+Drop-in replacement for [go-grpc-prometheus](https://github.com/grpc-ecosystem/go-grpc-prometheus).
+
 ## Usage
 
 ### Server
@@ -21,7 +25,7 @@ s := grpc.NewServer(
 grpc_health_v1.RegisterHealthServer(s, health.NewServer())
 
 // optionally pre-populate metrics with services and methods registered by the server
-m.Register(s)
+m.InitializeMetrics(s)
 
 http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 	m.WritePrometheus(w)
@@ -31,5 +35,8 @@ http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 
 ### Client
 
+TODO
+
 ## Benchmarks
 
+TODO
