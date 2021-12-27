@@ -9,6 +9,11 @@ Drop-in replacement for [go-grpc-prometheus](https://github.com/grpc-ecosystem/g
 ### Server
 
 ```go
+import (
+	"google.golang.org/grpc"
+	"github.com/amenzhinsky/grpcmetrics"
+)
+
 m := grpcmetrics.NewServerMetrics()
 s := grpc.NewServer(
 	grpc.ChainUnaryInterceptor(
@@ -28,14 +33,32 @@ grpc_health_v1.RegisterHealthServer(s, health.NewServer())
 m.InitializeMetrics(s)
 
 http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-	m.WritePrometheus(w)
 	metrics.WritePrometheus(w, true)
 })
 ```
 
 ### Client
 
-TODO
+```go
+m := grpcmetrics.NewClientMetrics()
+c, err := grpc.Dial("",
+	grpc.WithChainUnaryInterceptor(
+		grpcmetrics.UnaryClientInterceptor(m),
+		// other interceptors...
+	),
+	grpc.WithChainStreamInterceptor(
+		grpcmetrics.UnaryClientInterceptor(m)),
+		// other interceptors...
+	),
+)
+if err != nil {
+	return err
+}
+
+http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+	metrics.WritePrometheus(w, true)
+})
+```
 
 ## Benchmarks
 

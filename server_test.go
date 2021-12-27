@@ -3,12 +3,12 @@ package grpcmetrics
 import (
 	"bytes"
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/VictoriaMetrics/metrics"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -18,7 +18,10 @@ import (
 )
 
 func TestUnaryServerInterceptor(t *testing.T) {
-	m := newServerMetrics(WithServerHandlingTimeHistogram(true))
+	m := newServerMetrics(
+		WithServerMetricsSet(metrics.NewSet()),
+		WithServerHandlingTimeHistogram(true),
+	)
 	if _, err := UnaryServerInterceptor(m)(context.Background(), nil, &grpc.UnaryServerInfo{
 		FullMethod: "/grpc.health.v1.Health/Check",
 	}, func(
@@ -29,14 +32,17 @@ func TestUnaryServerInterceptor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checkContains(t, m,
+	checkContains(t, m.s,
 		`grpc_server_started_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 1`,
 		`grpc_server_handled_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
 	)
 }
 
 func TestStreamServerInterceptor(t *testing.T) {
-	m := newServerMetrics()
+	m := newServerMetrics(
+		WithServerMetricsSet(metrics.NewSet()),
+		WithServerHandlingTimeHistogram(true),
+	)
 	if err := StreamServerInterceptor(m)(nil, nil, &grpc.StreamServerInfo{
 		FullMethod:     "/grpc.health.v1.Health/Watch",
 		IsServerStream: true,
@@ -45,7 +51,7 @@ func TestStreamServerInterceptor(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	checkContains(t, m,
+	checkContains(t, m.s,
 		`grpc_server_started_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,
 		`grpc_server_handled_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 1`,
 	)
@@ -54,7 +60,7 @@ func TestStreamServerInterceptor(t *testing.T) {
 func BenchmarkServerInterceptorScrape(b *testing.B) {
 	m := newServerMetrics()
 	h := func(w http.ResponseWriter, r *http.Request) {
-		m.WritePrometheus(w)
+		m.set.s.WritePrometheus(w)
 	}
 	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	b.ResetTimer()
@@ -128,10 +134,10 @@ func benchStreamServerInterceptor(b *testing.B, h grpc.StreamServerInterceptor) 
 	})
 }
 
-func checkContains(t *testing.T, m interface{ WritePrometheus(w io.Writer) }, what ...string) {
+func checkContains(t *testing.T, s *metrics.Set, what ...string) {
 	t.Helper()
 	var b bytes.Buffer
-	m.WritePrometheus(&b)
+	s.WritePrometheus(&b)
 	for i := range what {
 		if !strings.Contains(b.String(), what[i]) {
 			t.Fatalf("output doesn't contain: %s\n%s", what[i], b.String())

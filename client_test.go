@@ -5,13 +5,17 @@ import (
 	"io"
 	"testing"
 
+	"github.com/VictoriaMetrics/metrics"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 func TestUnaryClientInterceptor(t *testing.T) {
-	m := NewClientMetrics(WithClientHandlingTimeHistogram(true))
+	m := NewClientMetrics(
+		WithClientMetricsSet(metrics.NewSet()),
+		WithClientHandlingTimeHistogram(true),
+	)
 	if err := UnaryClientInterceptor(m)(
 		context.Background(), "/grpc.health.v1.Health/Check", nil, nil, nil,
 		func(
@@ -25,7 +29,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checkContains(t, m,
+	checkContains(t, m.s,
 		`grpc_client_handled_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
 		`grpc_client_msg_received_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 1`,
 		`grpc_client_msg_sent_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
@@ -34,7 +38,10 @@ func TestUnaryClientInterceptor(t *testing.T) {
 }
 
 func TestStreamClientInterceptor(t *testing.T) {
-	m := NewClientMetrics(WithClientHandlingTimeHistogram(true))
+	m := NewClientMetrics(
+		WithClientMetricsSet(metrics.NewSet()),
+		WithClientHandlingTimeHistogram(true),
+	)
 	fake := &fakeClientStream{}
 	stream, err := StreamClientInterceptor(m)(
 		context.Background(), &grpc.StreamDesc{
@@ -63,7 +70,7 @@ func TestStreamClientInterceptor(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, io.EOF)
 	}
 
-	checkContains(t, m,
+	checkContains(t, m.s,
 		`grpc_client_handled_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 1`,
 		`grpc_client_msg_received_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,
 		`grpc_client_msg_sent_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,

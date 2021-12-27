@@ -2,7 +2,6 @@ package grpcmetrics
 
 import (
 	"fmt"
-	"io"
 	"math"
 	"strings"
 	"sync"
@@ -13,7 +12,6 @@ import (
 
 func newSet() set {
 	return set{
-		s:  metrics.NewSet(),
 		mc: map[string]map[string]map[string]map[codes.Code]interface{}{},
 	}
 }
@@ -22,13 +20,6 @@ type set struct {
 	s  *metrics.Set
 	mu sync.RWMutex
 	mc map[string]map[string]map[string]map[codes.Code]interface{} // TODO: use metrics.Metric interface
-}
-
-func (s *set) WritePrometheus(w io.Writer) {
-	if s.s == nil {
-		panic("cannot use this method with the default metrics set use metrics.WritePrometheus instead")
-	}
-	s.s.WritePrometheus(w)
 }
 
 func (s *set) counter(
@@ -94,7 +85,7 @@ func (s *set) metric(
 	if !ok {
 		if s.lock(&locked) || methods[code] == nil {
 			var b strings.Builder
-			b.Grow(4096) // should be enough for almost all metric names
+			b.Grow(1024) // should be enough for almost all metric names
 			b.WriteString(name)
 			b.WriteString(`{grpc_type="`)
 			b.WriteString(typ)
