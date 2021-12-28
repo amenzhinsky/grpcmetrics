@@ -59,7 +59,3 @@ http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 	metrics.WritePrometheus(w, true)
 })
 ```
-
-## Benchmarks
-
-TODO

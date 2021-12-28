@@ -10,13 +10,67 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	metricServerStarted     = "grpc_server_started_total"
-	metricServerHandled     = "grpc_server_handled_total"
-	metricServerMsgSent     = "grpc_server_msg_sent_total"
-	metricServerMsgReceived = "grpc_server_msg_received_total"
-	metricServerHandling    = "grpc_server_handling_seconds"
-)
+const unary = "unary"
+
+type ServerOption func(m *ServerMetrics)
+
+func WithServerHandlingTimeHistogram() ServerOption {
+	return func(m *ServerMetrics) {
+		m.handling = newHistogram("grpc_server_handling_seconds")
+	}
+}
+
+func WithServerMetricsSet(set *metrics.Set) ServerOption {
+	return func(m *ServerMetrics) {
+		m.s = set
+	}
+}
+
+func NewServerMetrics(opts ...ServerOption) *ServerMetrics {
+	s := &ServerMetrics{
+		started: newCounter("grpc_server_started_total"),
+		handled: newCounter("grpc_server_handled_total"),
+		msgSent: newCounter("grpc_server_msg_sent_total"),
+		msgRecv: newCounter("grpc_server_msg_received_total"),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+type ServerMetrics struct {
+	s        *metrics.Set
+	started  *counter
+	handled  *counter
+	msgSent  *counter
+	msgRecv  *counter
+	handling *histogram
+}
+
+func (m *ServerMetrics) InitializeMetrics(s *grpc.Server) {
+	for service, info := range s.GetServiceInfo() {
+		for _, method := range info.Methods {
+			typ := streamType(method.IsServerStream, method.IsClientStream)
+			fullMethod := "/" + service + "/" + method.Name
+			_ = m.started.with(m.s, typ, fullMethod, noCode)
+			_ = m.msgSent.with(m.s, typ, fullMethod, noCode)
+			_ = m.msgRecv.with(m.s, typ, fullMethod, noCode)
+			for _, code := range [...]codes.Code{
+				codes.OK, codes.Canceled, codes.Unknown, codes.InvalidArgument,
+				codes.DeadlineExceeded, codes.NotFound, codes.AlreadyExists,
+				codes.PermissionDenied, codes.ResourceExhausted, codes.FailedPrecondition,
+				codes.Aborted, codes.OutOfRange, codes.Unimplemented, codes.Internal,
+				codes.Unavailable, codes.DataLoss, codes.Unauthenticated,
+			} {
+				_ = m.handled.with(m.s, typ, fullMethod, code)
+			}
+			if m.handling != nil {
+				_ = m.handling.with(m.s, typ, fullMethod)
+			}
+		}
+	}
+}
 
 func UnaryServerInterceptor(m *ServerMetrics) grpc.UnaryServerInterceptor {
 	return func(
@@ -26,19 +80,18 @@ func UnaryServerInterceptor(m *ServerMetrics) grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
 		var started time.Time
-		if m.handlingHistogram {
+		if m.handling != nil {
 			started = time.Now()
 		}
-		typ, service, method := keys(info.FullMethod, false, false)
-		m.counter(metricServerStarted, typ, service, method, noCode).Inc()
-		m.counter(metricServerMsgReceived, typ, service, method, noCode).Inc()
+		m.started.with(m.s, unary, info.FullMethod, noCode).Inc()
+		m.msgRecv.with(m.s, unary, info.FullMethod, noCode).Inc()
 		res, err := handler(ctx, req)
-		m.counter(metricServerHandled, typ, service, method, status.Code(err)).Inc()
+		m.handled.with(m.s, unary, info.FullMethod, status.Code(err)).Inc()
 		if err == nil {
-			m.counter(metricServerMsgSent, typ, service, method, noCode).Inc()
+			m.msgSent.with(m.s, unary, info.FullMethod, noCode).Inc()
 		}
-		if m.handlingHistogram {
-			m.histogram(metricServerHandling, typ, service, method).UpdateDuration(started)
+		if m.handling != nil {
+			m.handling.with(m.s, unary, info.FullMethod).UpdateDuration(started)
 		}
 		return res, err
 	}
@@ -52,19 +105,19 @@ func StreamServerInterceptor(m *ServerMetrics) grpc.StreamServerInterceptor {
 		handler grpc.StreamHandler,
 	) error {
 		var started time.Time
-		if m.handlingHistogram {
+		if m.handling != nil {
 			started = time.Now()
 		}
-		typ, service, method := keys(info.FullMethod, info.IsServerStream, info.IsClientStream)
-		m.counter(metricServerStarted, typ, service, method, noCode).Inc()
+		typ := streamType(info.IsServerStream, info.IsClientStream)
+		m.started.with(m.s, typ, info.FullMethod, noCode).Inc()
 		err := handler(srv, &serverStream{
 			ss,
-			m.counter(metricServerMsgSent, typ, service, method, noCode),
-			m.counter(metricServerMsgReceived, typ, service, method, noCode),
+			m.msgSent.with(m.s, typ, info.FullMethod, noCode),
+			m.msgRecv.with(m.s, typ, info.FullMethod, noCode),
 		})
-		m.counter(metricServerHandled, typ, service, method, status.Code(err)).Inc()
-		if m.handlingHistogram {
-			m.histogram(metricServerHandling, typ, service, method).UpdateDuration(started)
+		m.handled.with(m.s, typ, info.FullMethod, status.Code(err)).Inc()
+		if m.handling != nil {
+			m.handling.with(m.s, typ, info.FullMethod).UpdateDuration(started)
 		}
 		return err
 	}
@@ -90,54 +143,4 @@ func (ss *serverStream) RecvMsg(m interface{}) error {
 		ss.recv.Inc()
 	}
 	return err
-}
-
-type ServerOption func(m *ServerMetrics)
-
-func WithServerHandlingTimeHistogram(enabled bool) ServerOption {
-	return func(m *ServerMetrics) {
-		m.handlingHistogram = enabled
-	}
-}
-
-func WithServerMetricsSet(set *metrics.Set) ServerOption {
-	return func(m *ServerMetrics) {
-		m.set.s = set
-	}
-}
-
-func NewServerMetrics(opts ...ServerOption) *ServerMetrics {
-	s := &ServerMetrics{set: newSet()}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
-}
-
-type ServerMetrics struct {
-	set
-	handlingHistogram bool
-}
-
-func (m *ServerMetrics) InitializeMetrics(s *grpc.Server) {
-	for service, info := range s.GetServiceInfo() {
-		for _, method := range info.Methods {
-			typ := kind(method.IsServerStream, method.IsClientStream)
-			_ = m.counter(metricServerStarted, typ, service, method.Name, noCode)
-			_ = m.counter(metricServerMsgSent, typ, service, method.Name, noCode)
-			_ = m.counter(metricServerMsgReceived, typ, service, method.Name, noCode)
-			for _, code := range [...]codes.Code{
-				codes.OK, codes.Canceled, codes.Unknown, codes.InvalidArgument,
-				codes.DeadlineExceeded, codes.NotFound, codes.AlreadyExists,
-				codes.PermissionDenied, codes.ResourceExhausted, codes.FailedPrecondition,
-				codes.Aborted, codes.OutOfRange, codes.Unimplemented, codes.Internal,
-				codes.Unavailable, codes.DataLoss, codes.Unauthenticated,
-			} {
-				_ = m.counter(metricServerHandled, typ, service, method.Name, code)
-			}
-			if m.handlingHistogram {
-				_ = m.histogram(metricServerHandling, typ, service, method.Name)
-			}
-		}
-	}
 }

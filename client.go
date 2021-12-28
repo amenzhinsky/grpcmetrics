@@ -3,6 +3,7 @@ package grpcmetrics
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/VictoriaMetrics/metrics"
 	"google.golang.org/grpc"
@@ -10,13 +11,41 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	metricClientStarted     = "grpc_client_started_total"
-	metricClientHandled     = "grpc_client_handled_total"
-	metricClientMsgReceived = "grpc_client_msg_received_total"
-	metricClientMsgSent     = "grpc_client_msg_sent_total"
-	// TODO: metricClientHandling    = "grpc_client_handling_seconds"
-)
+type ClientOption func(m *ClientMetrics)
+
+func WithClientHandlingTimeHistogram() ClientOption {
+	return func(m *ClientMetrics) {
+		m.handling = newHistogram("grpc_client_handling_seconds")
+	}
+}
+
+func WithClientMetricsSet(set *metrics.Set) ClientOption {
+	return func(m *ClientMetrics) {
+		m.s = set
+	}
+}
+
+func NewClientMetrics(opts ...ClientOption) *ClientMetrics {
+	m := &ClientMetrics{
+		started: newCounter("grpc_client_started_total"),
+		handled: newCounter("grpc_client_handled_total"),
+		msgRecv: newCounter("grpc_client_msg_received_total"),
+		msgSent: newCounter("grpc_client_msg_sent_total"),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+type ClientMetrics struct {
+	s        *metrics.Set
+	started  *counter
+	handled  *counter
+	msgRecv  *counter
+	msgSent  *counter
+	handling *histogram
+}
 
 func UnaryClientInterceptor(m *ClientMetrics) grpc.UnaryClientInterceptor {
 	return func(
@@ -27,13 +56,19 @@ func UnaryClientInterceptor(m *ClientMetrics) grpc.UnaryClientInterceptor {
 		invoker grpc.UnaryInvoker,
 		opts ...grpc.CallOption,
 	) error {
-		typ, service, method := keys(fullMethod, false, false)
-		m.counter(metricClientStarted, typ, service, method, noCode).Inc()
-		m.counter(metricClientMsgReceived, typ, service, method, noCode).Inc()
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		m.counter(metricClientHandled, typ, service, method, status.Code(err)).Inc()
+		var started time.Time
+		if m.handling != nil {
+			started = time.Now()
+		}
+		m.started.with(m.s, unary, fullMethod, noCode).Inc()
+		m.msgRecv.with(m.s, unary, fullMethod, noCode).Inc()
+		err := invoker(ctx, fullMethod, req, reply, cc, opts...)
+		m.handled.with(m.s, unary, fullMethod, status.Code(err)).Inc()
 		if err == nil {
-			m.counter(metricClientMsgSent, typ, service, method, status.Code(err)).Inc()
+			m.msgSent.with(m.s, unary, fullMethod, status.Code(err)).Inc()
+		}
+		if m.handling != nil {
+			m.handling.with(m.s, unary, fullMethod).UpdateDuration(started)
 		}
 		return err
 	}
@@ -48,19 +83,27 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 		streamer grpc.Streamer,
 		opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
-		typ, service, method := keys(fullMethod, desc.ServerStreams, desc.ClientStreams)
-		m.counter(metricClientStarted, typ, service, method, noCode).Inc()
-		cs, err := streamer(ctx, desc, cc, method, opts...)
+		typ := streamType(desc.ServerStreams, desc.ClientStreams)
+		var started time.Time
+		var handling *metrics.Histogram
+		if m.handling != nil {
+			started = time.Now()
+			handling = m.handling.with(m.s, typ, fullMethod)
+		}
+		m.started.with(m.s, typ, fullMethod, noCode).Inc()
+		cs, err := streamer(ctx, desc, cc, fullMethod, opts...)
 		if err != nil {
-			m.counter(metricClientHandled, typ, service, method, status.Code(err)).Inc()
+			m.handled.with(m.s, typ, fullMethod, status.Code(err)).Inc()
 			return nil, err
 		}
 		return &clientStream{
 			cs,
-			m.counter(metricClientMsgSent, typ, service, method, noCode),
-			m.counter(metricClientMsgReceived, typ, service, method, noCode),
+			m.msgSent.with(m.s, typ, fullMethod, noCode),
+			m.msgRecv.with(m.s, typ, fullMethod, noCode),
 			m,
-			typ, service, method,
+			typ, fullMethod,
+			handling,
+			started,
 		}, err
 	}
 }
@@ -70,8 +113,10 @@ type clientStream struct {
 	send *metrics.Counter
 	recv *metrics.Counter
 
-	m                    *ClientMetrics
-	typ, service, method string
+	m           *ClientMetrics
+	typ, method string
+	handling    *metrics.Histogram
+	startedAt   time.Time
 }
 
 func (s *clientStream) SendMsg(m interface{}) error {
@@ -84,40 +129,17 @@ func (s *clientStream) SendMsg(m interface{}) error {
 
 func (s *clientStream) RecvMsg(m interface{}) error {
 	err := s.ClientStream.RecvMsg(m)
-	switch err {
-	case nil:
+	if err == nil {
 		s.recv.Inc()
-	case io.EOF:
-		s.m.counter(metricClientHandled, s.typ, s.service, s.method, codes.OK).Inc()
-	default:
-		s.m.counter(metricClientHandled, s.typ, s.service, s.method, status.Code(err)).Inc()
+		return nil
+	}
+	code := codes.OK
+	if err != io.EOF {
+		code = status.Code(err)
+	}
+	s.m.handled.with(s.m.s, s.typ, s.method, code).Inc()
+	if s.handling != nil {
+		s.handling.UpdateDuration(s.startedAt)
 	}
 	return err
-}
-
-type ClientOption func(m *ClientMetrics)
-
-func WithClientHandlingTimeHistogram(enabled bool) ClientOption {
-	return func(m *ClientMetrics) {
-		m.handlingHistogram = enabled
-	}
-}
-
-func WithClientMetricsSet(set *metrics.Set) ClientOption {
-	return func(m *ClientMetrics) {
-		m.set.s = set
-	}
-}
-
-func NewClientMetrics(opts ...ClientOption) *ClientMetrics {
-	m := &ClientMetrics{set: newSet()}
-	for _, opt := range opts {
-		opt(m)
-	}
-	return m
-}
-
-type ClientMetrics struct {
-	set
-	handlingHistogram bool
 }

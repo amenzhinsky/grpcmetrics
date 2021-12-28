@@ -14,7 +14,7 @@ import (
 func TestUnaryClientInterceptor(t *testing.T) {
 	m := NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
-		WithClientHandlingTimeHistogram(true),
+		WithClientHandlingTimeHistogram(),
 	)
 	if err := UnaryClientInterceptor(m)(
 		context.Background(), "/grpc.health.v1.Health/Check", nil, nil, nil,
@@ -40,7 +40,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 func TestStreamClientInterceptor(t *testing.T) {
 	m := NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
-		WithClientHandlingTimeHistogram(true),
+		WithClientHandlingTimeHistogram(),
 	)
 	fake := &fakeClientStream{}
 	stream, err := StreamClientInterceptor(m)(
@@ -79,7 +79,9 @@ func TestStreamClientInterceptor(t *testing.T) {
 }
 
 func BenchmarkUnaryClientInterceptor(b *testing.B) {
-	benchUnaryClientInterceptor(b, UnaryClientInterceptor(NewClientMetrics()))
+	benchUnaryClientInterceptor(b, UnaryClientInterceptor(NewClientMetrics(
+		WithClientMetricsSet(metrics.NewSet()),
+	)))
 }
 
 func BenchmarkUnaryClientInterceptor_client_golang(b *testing.B) {
@@ -88,7 +90,9 @@ func BenchmarkUnaryClientInterceptor_client_golang(b *testing.B) {
 }
 
 func BenchmarkStreamClientInterceptor(b *testing.B) {
-	benchStreamClientInterceptor(b, StreamClientInterceptor(NewClientMetrics()))
+	benchStreamClientInterceptor(b, StreamClientInterceptor(NewClientMetrics(
+		WithClientMetricsSet(metrics.NewSet()),
+	)))
 }
 
 func BenchmarkStreamClientInterceptor_client_golang(b *testing.B) {

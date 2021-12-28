@@ -15,12 +15,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestUnaryServerInterceptor(t *testing.T) {
 	m := newServerMetrics(
-		WithServerMetricsSet(metrics.NewSet()),
-		WithServerHandlingTimeHistogram(true),
+		WithServerHandlingTimeHistogram(),
 	)
 	if _, err := UnaryServerInterceptor(m)(context.Background(), nil, &grpc.UnaryServerInfo{
 		FullMethod: "/grpc.health.v1.Health/Check",
@@ -35,32 +35,56 @@ func TestUnaryServerInterceptor(t *testing.T) {
 	checkContains(t, m.s,
 		`grpc_server_started_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 1`,
 		`grpc_server_handled_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
+		`grpc_server_msg_received_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 1`,
+		`grpc_server_msg_sent_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 1`,
 	)
 }
 
 func TestStreamServerInterceptor(t *testing.T) {
 	m := newServerMetrics(
-		WithServerMetricsSet(metrics.NewSet()),
-		WithServerHandlingTimeHistogram(true),
+		WithServerHandlingTimeHistogram(),
 	)
-	if err := StreamServerInterceptor(m)(nil, nil, &grpc.StreamServerInfo{
+	if err := StreamServerInterceptor(m)(nil, &fakeServerStream{}, &grpc.StreamServerInfo{
 		FullMethod:     "/grpc.health.v1.Health/Watch",
 		IsServerStream: true,
 	}, func(srv interface{}, stream grpc.ServerStream) error {
-		return nil
+		if err := stream.SendMsg(&grpc_health_v1.HealthCheckRequest{}); err != nil {
+			return err
+		}
+		var res grpc_health_v1.HealthCheckResponse
+		return stream.RecvMsg(&res)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	checkContains(t, m.s,
 		`grpc_server_started_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,
 		`grpc_server_handled_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 1`,
+		`grpc_server_msg_received_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,
+		`grpc_server_msg_sent_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 1`,
+	)
+}
+
+func TestServerMetrics_InitializeMetrics(t *testing.T) {
+	m := newServerMetrics(
+		WithServerHandlingTimeHistogram(),
+	)
+	m.InitializeMetrics(newServer())
+	checkContains(t, m.s,
+		`grpc_server_started_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 0`,
+		`grpc_server_handled_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 0`,
+		`grpc_server_msg_received_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 0`,
+		`grpc_server_msg_sent_total{grpc_type="unary",grpc_service="/grpc.health.v1.Health",grpc_method="Check"} 0`,
+		`grpc_server_started_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 0`,
+		`grpc_server_handled_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 0`,
+		`grpc_server_msg_received_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 0`,
+		`grpc_server_msg_sent_total{grpc_type="server_stream",grpc_service="/grpc.health.v1.Health",grpc_method="Watch"} 0`,
 	)
 }
 
 func BenchmarkServerInterceptorScrape(b *testing.B) {
 	m := newServerMetrics()
 	h := func(w http.ResponseWriter, r *http.Request) {
-		m.set.s.WritePrometheus(w)
+		m.s.WritePrometheus(w)
 	}
 	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	b.ResetTimer()
@@ -152,8 +176,9 @@ func newServer() *grpc.Server {
 }
 
 func newServerMetrics(opts ...ServerOption) *ServerMetrics {
-	m := NewServerMetrics(opts...)
-	m.InitializeMetrics(newServer())
+	m := NewServerMetrics(append([]ServerOption{
+		WithServerMetricsSet(metrics.NewSet()),
+	}, opts...)...)
 	return m
 }
 
@@ -161,4 +186,28 @@ func newServerMetrics_client_golang() *grpc_prometheus.ServerMetrics {
 	m := grpc_prometheus.NewServerMetrics()
 	m.InitializeMetrics(newServer())
 	return m
+}
+
+type fakeServerStream struct{}
+
+func (s *fakeServerStream) SetHeader(md metadata.MD) error {
+	return nil
+}
+
+func (s *fakeServerStream) SendHeader(md metadata.MD) error {
+	return nil
+}
+
+func (s *fakeServerStream) SetTrailer(md metadata.MD) {}
+
+func (s *fakeServerStream) Context() context.Context {
+	return context.Background()
+}
+
+func (s *fakeServerStream) SendMsg(m interface{}) error {
+	return nil
+}
+
+func (s *fakeServerStream) RecvMsg(m interface{}) error {
+	return nil
 }
