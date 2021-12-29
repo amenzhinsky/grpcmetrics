@@ -78,7 +78,7 @@ func TestStreamClientInterceptor(t *testing.T) {
 	)
 }
 
-func BenchmarkUnaryClientInterceptor(b *testing.B) {
+func BenchmarkUnaryClientInterceptor_metrics(b *testing.B) {
 	benchUnaryClientInterceptor(b, UnaryClientInterceptor(NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
 	)))
@@ -89,7 +89,7 @@ func BenchmarkUnaryClientInterceptor_client_golang(b *testing.B) {
 	benchUnaryClientInterceptor(b, h.UnaryClientInterceptor())
 }
 
-func BenchmarkStreamClientInterceptor(b *testing.B) {
+func BenchmarkStreamClientInterceptor_metrics(b *testing.B) {
 	benchStreamClientInterceptor(b, StreamClientInterceptor(NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
 	)))

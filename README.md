@@ -59,3 +59,30 @@ http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 	metrics.WritePrometheus(w, true)
 })
 ```
+
+### Benchmarks
+
+`benchcmp` against `client_golang`.
+
+```
+benchmark                               old ns/op     new ns/op     delta
+BenchmarkUnaryClientInterceptor-12      139           85.9          -38.31%
+BenchmarkStreamClientInterceptor-12     156           90.0          -42.15%
+BenchmarkServerScrape-12                215109        1681          -99.22%
+BenchmarkUnaryServerInterceptor-12      184           86.7          -52.94%
+BenchmarkStreamServerInterceptor-12     129           83.0          -35.83%
+
+benchmark                               old allocs     new allocs     delta
+BenchmarkUnaryClientInterceptor-12      4              0              -100.00%
+BenchmarkStreamClientInterceptor-12     6              2              -66.67%
+BenchmarkServerScrape-12                267            9              -96.63%
+BenchmarkUnaryServerInterceptor-12      5              0              -100.00%
+BenchmarkStreamServerInterceptor-12     4              1              -75.00%
+
+benchmark                               old bytes     new bytes     delta
+BenchmarkUnaryClientInterceptor-12      240           0             -100.00%
+BenchmarkStreamClientInterceptor-12     264           128           -51.52%
+BenchmarkServerScrape-12                60630         992           -98.36%
+BenchmarkUnaryServerInterceptor-12      288           0             -100.00%
+BenchmarkStreamServerInterceptor-12     216           32            -85.19%
+```

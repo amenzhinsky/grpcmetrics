@@ -81,7 +81,7 @@ func TestServerMetrics_InitializeMetrics(t *testing.T) {
 	)
 }
 
-func BenchmarkServerInterceptorScrape(b *testing.B) {
+func BenchmarkServerScrape_metrics(b *testing.B) {
 	m := newServerMetrics()
 	h := func(w http.ResponseWriter, r *http.Request) {
 		m.s.WritePrometheus(w)
@@ -93,7 +93,7 @@ func BenchmarkServerInterceptorScrape(b *testing.B) {
 	}
 }
 
-func BenchmarkServerInterceptorScrape_client_golang(b *testing.B) {
+func BenchmarkServerScrape_client_golang(b *testing.B) {
 	m := newServerMetrics_client_golang()
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(m)
@@ -107,7 +107,7 @@ func BenchmarkServerInterceptorScrape_client_golang(b *testing.B) {
 	}
 }
 
-func BenchmarkUnaryServerInterceptor(b *testing.B) {
+func BenchmarkUnaryServerInterceptor_metrics(b *testing.B) {
 	benchUnaryServerInterceptor(b, UnaryServerInterceptor(newServerMetrics()))
 }
 
@@ -116,7 +116,7 @@ func BenchmarkUnaryServerInterceptor_client_golang(b *testing.B) {
 	benchUnaryServerInterceptor(b, h.UnaryServerInterceptor())
 }
 
-func BenchmarkStreamServerInterceptor(b *testing.B) {
+func BenchmarkStreamServerInterceptor_metrics(b *testing.B) {
 	benchStreamServerInterceptor(b, StreamServerInterceptor(newServerMetrics()))
 }
 
