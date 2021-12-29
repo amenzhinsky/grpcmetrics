@@ -119,7 +119,7 @@ func splitMethodName(s string) (string, string) {
 		panic(fmt.Sprintf("malformed full method: %s", s))
 	}
 	i := strings.IndexByte(s[1:], '/')
-	return s[:i+1], s[i+2:]
+	return s[1 : i+1], s[i+2:]
 }
 
 func streamType(server, client bool) string {
