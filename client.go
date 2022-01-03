@@ -19,9 +19,9 @@ func WithClientHandlingTimeHistogram() ClientOption {
 	}
 }
 
-func WithClientMetricsSet(set *metrics.Set) ClientOption {
+func WithClientMetricsSet(s *metrics.Set) ClientOption {
 	return func(m *ClientMetrics) {
-		m.s = set
+		m.s = &set{s}
 	}
 }
 
@@ -39,7 +39,7 @@ func NewClientMetrics(opts ...ClientOption) *ClientMetrics {
 }
 
 type ClientMetrics struct {
-	s        *metrics.Set
+	s        *set
 	started  *counter
 	handled  *counter
 	msgRecv  *counter
@@ -83,13 +83,11 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 		streamer grpc.Streamer,
 		opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
-		typ := streamType(desc.ServerStreams, desc.ClientStreams)
 		var started time.Time
-		var handling *metrics.Histogram
 		if m.handling != nil {
 			started = time.Now()
-			handling = m.handling.with(m.s, typ, fullMethod)
 		}
+		typ := streamType(desc.ServerStreams, desc.ClientStreams)
 		m.started.with(m.s, typ, fullMethod, noCode).Inc()
 		cs, err := streamer(ctx, desc, cc, fullMethod, opts...)
 		if err != nil {
@@ -98,11 +96,8 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 		}
 		return &clientStream{
 			cs,
-			m.msgSent.with(m.s, typ, fullMethod, noCode),
-			m.msgRecv.with(m.s, typ, fullMethod, noCode),
 			m,
 			typ, fullMethod,
-			handling,
 			started,
 		}, err
 	}
@@ -110,36 +105,33 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 
 type clientStream struct {
 	grpc.ClientStream
-	send *metrics.Counter
-	recv *metrics.Counter
 
 	m           *ClientMetrics
 	typ, method string
-	handling    *metrics.Histogram
 	startedAt   time.Time
 }
 
-func (s *clientStream) SendMsg(m interface{}) error {
-	err := s.ClientStream.SendMsg(m)
+func (cs *clientStream) SendMsg(m interface{}) error {
+	err := cs.ClientStream.SendMsg(m)
 	if err == nil {
-		s.send.Inc()
+		cs.m.msgSent.with(cs.m.s, cs.typ, cs.method, noCode).Inc()
 	}
 	return err
 }
 
-func (s *clientStream) RecvMsg(m interface{}) error {
-	err := s.ClientStream.RecvMsg(m)
+func (cs *clientStream) RecvMsg(m interface{}) error {
+	err := cs.ClientStream.RecvMsg(m)
 	if err == nil {
-		s.recv.Inc()
+		cs.m.msgRecv.with(cs.m.s, cs.typ, cs.method, noCode).Inc()
 		return nil
 	}
 	code := codes.OK
 	if err != io.EOF {
 		code = status.Code(err)
 	}
-	s.m.handled.with(s.m.s, s.typ, s.method, code).Inc()
-	if s.handling != nil {
-		s.handling.UpdateDuration(s.startedAt)
+	cs.m.handled.with(cs.m.s, cs.typ, cs.method, code).Inc()
+	if cs.m.handling != nil {
+		cs.m.handling.with(cs.m.s, cs.typ, cs.method).UpdateDuration(cs.startedAt)
 	}
 	return err
 }

@@ -29,7 +29,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checkContains(t, m.s,
+	checkContains(t, m.s.Set,
 		`grpc_client_handled_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
 		`grpc_client_msg_received_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check"} 1`,
 		`grpc_client_msg_sent_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
@@ -70,7 +70,7 @@ func TestStreamClientInterceptor(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, io.EOF)
 	}
 
-	checkContains(t, m.s,
+	checkContains(t, m.s.Set,
 		`grpc_client_handled_total{grpc_type="server_stream",grpc_service="grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 1`,
 		`grpc_client_msg_received_total{grpc_type="server_stream",grpc_service="grpc.health.v1.Health",grpc_method="Watch"} 1`,
 		`grpc_client_msg_sent_total{grpc_type="server_stream",grpc_service="grpc.health.v1.Health",grpc_method="Watch"} 1`,

@@ -10,6 +10,24 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+type set struct {
+	*metrics.Set
+}
+
+func (s *set) counter(name string) interface{} {
+	if s.Set != nil {
+		return s.Set.NewCounter(name)
+	}
+	return metrics.NewCounter(name)
+}
+
+func (s *set) histogram(name string) interface{} {
+	if s.Set != nil {
+		return s.Set.NewHistogram(name)
+	}
+	return metrics.NewHistogram(name)
+}
+
 func newCounter(name string) *counter {
 	return &counter{newMetric(name)}
 }
@@ -18,13 +36,8 @@ type counter struct {
 	*metric
 }
 
-func (c *counter) with(set *metrics.Set, typ, method string, code codes.Code) *metrics.Counter {
-	return c.metric.with(set, typ, method, code, func(set *metrics.Set, name string) interface{} {
-		if set != nil {
-			return set.NewCounter(name)
-		}
-		return metrics.NewCounter(name)
-	}).(*metrics.Counter)
+func (c *counter) with(s *set, typ, method string, code codes.Code) *metrics.Counter {
+	return c.metric.with(typ, method, code, s.counter).(*metrics.Counter)
 }
 
 func newHistogram(name string) *histogram {
@@ -35,13 +48,8 @@ type histogram struct {
 	*metric
 }
 
-func (h *histogram) with(set *metrics.Set, typ, method string) *metrics.Histogram {
-	return h.metric.with(set, typ, method, noCode, func(set *metrics.Set, name string) interface{} {
-		if set != nil {
-			return set.NewHistogram(name)
-		}
-		return metrics.NewHistogram(name)
-	}).(*metrics.Histogram)
+func (h *histogram) with(s *set, typ, method string) *metrics.Histogram {
+	return h.metric.with(typ, method, noCode, s.histogram).(*metrics.Histogram)
 }
 
 func newMetric(name string) *metric {
@@ -58,8 +66,7 @@ type metric struct {
 }
 
 func (m *metric) with(
-	set *metrics.Set, typ, method string, code codes.Code,
-	fn func(set *metrics.Set, name string) interface{},
+	typ, method string, code codes.Code, new func(name string) interface{},
 ) interface{} {
 	m.mu.RLock() // try read lock first and promote to write lock if needed
 	var locked bool
@@ -95,7 +102,7 @@ func (m *metric) with(
 				b.WriteString(code.String())
 			}
 			b.WriteString(`"}`)
-			methods[code] = fn(set, b.String())
+			methods[code] = new(b.String())
 		}
 		metric = methods[code]
 	}

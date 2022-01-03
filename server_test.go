@@ -32,7 +32,7 @@ func TestUnaryServerInterceptor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checkContains(t, m.s,
+	checkContains(t, m.s.Set,
 		`grpc_server_started_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check"} 1`,
 		`grpc_server_handled_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 1`,
 		`grpc_server_msg_received_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check"} 1`,
@@ -56,7 +56,7 @@ func TestStreamServerInterceptor(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	checkContains(t, m.s,
+	checkContains(t, m.s.Set,
 		`grpc_server_started_total{grpc_type="server_stream",grpc_service="grpc.health.v1.Health",grpc_method="Watch"} 1`,
 		`grpc_server_handled_total{grpc_type="server_stream",grpc_service="grpc.health.v1.Health",grpc_method="Watch",grpc_code="OK"} 1`,
 		`grpc_server_msg_received_total{grpc_type="server_stream",grpc_service="grpc.health.v1.Health",grpc_method="Watch"} 1`,
@@ -69,7 +69,7 @@ func TestServerMetrics_InitializeMetrics(t *testing.T) {
 		WithServerHandlingTimeHistogram(),
 	)
 	m.InitializeMetrics(newServer())
-	checkContains(t, m.s,
+	checkContains(t, m.s.Set,
 		`grpc_server_started_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check"} 0`,
 		`grpc_server_handled_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check",grpc_code="OK"} 0`,
 		`grpc_server_msg_received_total{grpc_type="unary",grpc_service="grpc.health.v1.Health",grpc_method="Check"} 0`,
@@ -149,8 +149,11 @@ func benchStreamServerInterceptor(b *testing.B, h grpc.StreamServerInterceptor) 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := h(nil, nil, i, func(srv interface{}, stream grpc.ServerStream) error {
-				return nil
+			if err := h(nil, &fakeServerStream{}, i, func(srv interface{}, stream grpc.ServerStream) error {
+				if err := stream.SendMsg(nil); err != nil {
+					return err
+				}
+				return stream.RecvMsg(nil)
 			}); err != nil {
 				b.Fatal(err)
 			}
@@ -188,14 +191,16 @@ func newServerMetrics_client_golang() *grpc_prometheus.ServerMetrics {
 	return m
 }
 
-type fakeServerStream struct{}
+type fakeServerStream struct {
+	err error
+}
 
 func (s *fakeServerStream) SetHeader(md metadata.MD) error {
-	return nil
+	return s.err
 }
 
 func (s *fakeServerStream) SendHeader(md metadata.MD) error {
-	return nil
+	return s.err
 }
 
 func (s *fakeServerStream) SetTrailer(md metadata.MD) {}
@@ -205,9 +210,9 @@ func (s *fakeServerStream) Context() context.Context {
 }
 
 func (s *fakeServerStream) SendMsg(m interface{}) error {
-	return nil
+	return s.err
 }
 
 func (s *fakeServerStream) RecvMsg(m interface{}) error {
-	return nil
+	return s.err
 }

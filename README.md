@@ -62,27 +62,27 @@ http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 
 ### Benchmarks
 
-`benchcmp` against `client_golang`.
+`benchcmp` vs `client_golang`.
 
 ```
-benchmark                               old ns/op     new ns/op     delta
-BenchmarkUnaryClientInterceptor-12      139           85.9          -38.31%
-BenchmarkStreamClientInterceptor-12     156           90.0          -42.15%
-BenchmarkServerScrape-12                215109        1681          -99.22%
-BenchmarkUnaryServerInterceptor-12      184           86.7          -52.94%
-BenchmarkStreamServerInterceptor-12     129           83.0          -35.83%
+benchmark                                old ns/op     new ns/op     delta
+BenchmarkUnaryClientInterceptor_-12      139           94.6          -31.88%
+BenchmarkStreamClientInterceptor_-12     164           86.4          -47.37%
+BenchmarkServerScrape_-12                206090        1792          -99.13%
+BenchmarkUnaryServerInterceptor_-12      198           89.5          -54.72%
+BenchmarkStreamServerInterceptor_-12     212           107           -49.29%
 
-benchmark                               old allocs     new allocs     delta
-BenchmarkUnaryClientInterceptor-12      4              0              -100.00%
-BenchmarkStreamClientInterceptor-12     6              2              -66.67%
-BenchmarkServerScrape-12                267            9              -96.63%
-BenchmarkUnaryServerInterceptor-12      5              0              -100.00%
-BenchmarkStreamServerInterceptor-12     4              1              -75.00%
+benchmark                                old allocs     new allocs     delta
+BenchmarkUnaryClientInterceptor_-12      4              0              -100.00%
+BenchmarkStreamClientInterceptor_-12     6              2              -66.67%
+BenchmarkServerScrape_-12                267            9              -96.63%
+BenchmarkUnaryServerInterceptor_-12      5              0              -100.00%
+BenchmarkStreamServerInterceptor_-12     7              2              -71.43%
 
-benchmark                               old bytes     new bytes     delta
-BenchmarkUnaryClientInterceptor-12      240           0             -100.00%
-BenchmarkStreamClientInterceptor-12     264           128           -51.52%
-BenchmarkServerScrape-12                60630         992           -98.36%
-BenchmarkUnaryServerInterceptor-12      288           0             -100.00%
-BenchmarkStreamServerInterceptor-12     216           32            -85.19%
+benchmark                                old bytes     new bytes     delta
+BenchmarkUnaryClientInterceptor_-12      240           0             -100.00%
+BenchmarkStreamClientInterceptor_-12     264           96            -63.64%
+BenchmarkServerScrape_-12                60659         992           -98.36%
+BenchmarkUnaryServerInterceptor_-12      288           0             -100.00%
+BenchmarkStreamServerInterceptor_-12     328           80            -75.61%
 ```

@@ -20,9 +20,9 @@ func WithServerHandlingTimeHistogram() ServerOption {
 	}
 }
 
-func WithServerMetricsSet(set *metrics.Set) ServerOption {
+func WithServerMetricsSet(s *metrics.Set) ServerOption {
 	return func(m *ServerMetrics) {
-		m.s = set
+		m.s = &set{s}
 	}
 }
 
@@ -40,7 +40,7 @@ func NewServerMetrics(opts ...ServerOption) *ServerMetrics {
 }
 
 type ServerMetrics struct {
-	s        *metrics.Set
+	s        *set
 	started  *counter
 	handled  *counter
 	msgSent  *counter
@@ -112,8 +112,7 @@ func StreamServerInterceptor(m *ServerMetrics) grpc.StreamServerInterceptor {
 		m.started.with(m.s, typ, info.FullMethod, noCode).Inc()
 		err := handler(srv, &serverStream{
 			ss,
-			m.msgSent.with(m.s, typ, info.FullMethod, noCode),
-			m.msgRecv.with(m.s, typ, info.FullMethod, noCode),
+			m, typ, info.FullMethod,
 		})
 		m.handled.with(m.s, typ, info.FullMethod, status.Code(err)).Inc()
 		if m.handling != nil {
@@ -125,14 +124,15 @@ func StreamServerInterceptor(m *ServerMetrics) grpc.StreamServerInterceptor {
 
 type serverStream struct {
 	grpc.ServerStream
-	send *metrics.Counter
-	recv *metrics.Counter
+
+	m           *ServerMetrics
+	typ, method string
 }
 
 func (ss *serverStream) SendMsg(m interface{}) error {
 	err := ss.ServerStream.SendMsg(m)
 	if err == nil {
-		ss.send.Inc()
+		ss.m.msgSent.with(ss.m.s, ss.typ, ss.method, noCode).Inc()
 	}
 	return err
 }
@@ -140,7 +140,7 @@ func (ss *serverStream) SendMsg(m interface{}) error {
 func (ss *serverStream) RecvMsg(m interface{}) error {
 	err := ss.ServerStream.RecvMsg(m)
 	if err == nil {
-		ss.recv.Inc()
+		ss.m.msgRecv.with(ss.m.s, ss.typ, ss.method, noCode).Inc()
 	}
 	return err
 }
