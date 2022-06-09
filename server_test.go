@@ -20,7 +20,7 @@ import (
 
 func TestUnaryServerInterceptor(t *testing.T) {
 	m := newServerMetrics(
-		WithServerHandlingTimeHistogram(),
+		WithServerHandlingTimeHistogram(true),
 	)
 	if _, err := UnaryServerInterceptor(m)(context.Background(), nil, &grpc.UnaryServerInfo{
 		FullMethod: "/grpc.health.v1.Health/Check",
@@ -42,7 +42,7 @@ func TestUnaryServerInterceptor(t *testing.T) {
 
 func TestStreamServerInterceptor(t *testing.T) {
 	m := newServerMetrics(
-		WithServerHandlingTimeHistogram(),
+		WithServerHandlingTimeHistogram(true),
 	)
 	if err := StreamServerInterceptor(m)(nil, &fakeServerStream{}, &grpc.StreamServerInfo{
 		FullMethod:     "/grpc.health.v1.Health/Watch",
@@ -66,7 +66,7 @@ func TestStreamServerInterceptor(t *testing.T) {
 
 func TestServerMetrics_InitializeMetrics(t *testing.T) {
 	m := newServerMetrics(
-		WithServerHandlingTimeHistogram(),
+		WithServerHandlingTimeHistogram(true),
 	)
 	m.InitializeMetrics(newServer())
 	checkContains(t, m.s.Set,

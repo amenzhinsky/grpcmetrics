@@ -14,7 +14,7 @@ import (
 func TestUnaryClientInterceptor(t *testing.T) {
 	m := NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
-		WithClientHandlingTimeHistogram(),
+		WithClientHandlingTimeHistogram(true),
 	)
 	if err := UnaryClientInterceptor(m)(
 		context.Background(), "/grpc.health.v1.Health/Check", nil, nil, nil,
@@ -40,7 +40,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 func TestStreamClientInterceptor(t *testing.T) {
 	m := NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
-		WithClientHandlingTimeHistogram(),
+		WithClientHandlingTimeHistogram(true),
 	)
 	fake := &fakeClientStream{}
 	stream, err := StreamClientInterceptor(m)(

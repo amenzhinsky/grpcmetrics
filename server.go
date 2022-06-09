@@ -14,9 +14,11 @@ const unary = "unary"
 
 type ServerOption func(m *ServerMetrics)
 
-func WithServerHandlingTimeHistogram() ServerOption {
+func WithServerHandlingTimeHistogram(enable bool) ServerOption {
 	return func(m *ServerMetrics) {
-		m.handling = newHistogram("grpc_server_handling_seconds")
+		if enable {
+			m.handling = newHistogram("grpc_server_handling_seconds")
+		}
 	}
 }
 

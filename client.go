@@ -13,9 +13,11 @@ import (
 
 type ClientOption func(m *ClientMetrics)
 
-func WithClientHandlingTimeHistogram() ClientOption {
+func WithClientHandlingTimeHistogram(enable bool) ClientOption {
 	return func(m *ClientMetrics) {
-		m.handling = newHistogram("grpc_client_handling_seconds")
+		if enable {
+			m.handling = newHistogram("grpc_client_handling_seconds")
+		}
 	}
 }
 
