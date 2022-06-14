@@ -29,6 +29,7 @@ func WithClientMetricsSet(s *metrics.Set) ClientOption {
 
 func NewClientMetrics(opts ...ClientOption) *ClientMetrics {
 	m := &ClientMetrics{
+		s:       &set{},
 		started: newCounter("grpc_client_started_total"),
 		handled: newCounter("grpc_client_handled_total"),
 		msgRecv: newCounter("grpc_client_msg_received_total"),

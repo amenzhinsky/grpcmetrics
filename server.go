@@ -30,6 +30,7 @@ func WithServerMetricsSet(s *metrics.Set) ServerOption {
 
 func NewServerMetrics(opts ...ServerOption) *ServerMetrics {
 	s := &ServerMetrics{
+		s:       &set{},
 		started: newCounter("grpc_server_started_total"),
 		handled: newCounter("grpc_server_handled_total"),
 		msgSent: newCounter("grpc_server_msg_sent_total"),
