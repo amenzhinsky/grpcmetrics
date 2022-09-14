@@ -12,10 +12,7 @@ import (
 )
 
 func TestUnaryClientInterceptor(t *testing.T) {
-	m := NewClientMetrics(
-		WithClientMetricsSet(metrics.NewSet()),
-		WithClientHandlingTimeHistogram(true),
-	)
+	m := newClientMetrics()
 	if err := UnaryClientInterceptor(m)(
 		context.Background(), "/grpc.health.v1.Health/Check", nil, nil, nil,
 		func(
@@ -38,10 +35,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 }
 
 func TestStreamClientInterceptor(t *testing.T) {
-	m := NewClientMetrics(
-		WithClientMetricsSet(metrics.NewSet()),
-		WithClientHandlingTimeHistogram(true),
-	)
+	m := newClientMetrics()
 	fake := &fakeClientStream{}
 	stream, err := StreamClientInterceptor(m)(
 		context.Background(), &grpc.StreamDesc{
@@ -78,6 +72,14 @@ func TestStreamClientInterceptor(t *testing.T) {
 	)
 }
 
+func BenchmarkScrapeClient_metrics(b *testing.B) {
+	benchScrape(b, newClientMetrics().s)
+}
+
+func BenchmarkScrapeClient_client_golang(b *testing.B) {
+	benchScrape_client_golang(b, newClientMetrics_client_golang())
+}
+
 func BenchmarkUnaryClientInterceptor_metrics(b *testing.B) {
 	benchUnaryClientInterceptor(b, UnaryClientInterceptor(NewClientMetrics(
 		WithClientMetricsSet(metrics.NewSet()),
@@ -85,7 +87,7 @@ func BenchmarkUnaryClientInterceptor_metrics(b *testing.B) {
 }
 
 func BenchmarkUnaryClientInterceptor_client_golang(b *testing.B) {
-	h := grpc_prometheus.NewClientMetrics()
+	h := newClientMetrics_client_golang()
 	benchUnaryClientInterceptor(b, h.UnaryClientInterceptor())
 }
 
@@ -96,7 +98,7 @@ func BenchmarkStreamClientInterceptor_metrics(b *testing.B) {
 }
 
 func BenchmarkStreamClientInterceptor_client_golang(b *testing.B) {
-	h := grpc_prometheus.NewClientMetrics()
+	h := newClientMetrics_client_golang()
 	benchStreamClientInterceptor(b, h.StreamClientInterceptor())
 }
 
@@ -148,6 +150,19 @@ func benchStreamClientInterceptor(b *testing.B, h grpc.StreamClientInterceptor) 
 			}
 		}
 	})
+}
+
+func newClientMetrics() *ClientMetrics {
+	return NewClientMetrics(
+		WithClientMetricsSet(metrics.NewSet()),
+		WithClientHandlingTimeHistogram(true),
+	)
+}
+
+func newClientMetrics_client_golang() *grpc_prometheus.ClientMetrics {
+	h := grpc_prometheus.NewClientMetrics()
+	h.EnableClientHandlingTimeHistogram()
+	return h
 }
 
 type fakeClientStream struct {

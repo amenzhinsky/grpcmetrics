@@ -14,14 +14,14 @@ type set struct {
 	*metrics.Set
 }
 
-func (s *set) counter(name string) interface{} {
+func (s *set) counter(name string) any {
 	if s.Set != nil {
 		return s.Set.NewCounter(name)
 	}
 	return metrics.NewCounter(name)
 }
 
-func (s *set) histogram(name string) interface{} {
+func (s *set) histogram(name string) any {
 	if s.Set != nil {
 		return s.Set.NewHistogram(name)
 	}
@@ -55,23 +55,23 @@ func (h *histogram) with(s *set, typ, method string) *metrics.Histogram {
 func newMetric(name string) *metric {
 	return &metric{
 		name:    name,
-		methods: map[string]map[codes.Code]interface{}{},
+		methods: map[string]map[codes.Code]any{},
 	}
 }
 
 type metric struct {
 	mu      sync.RWMutex
 	name    string
-	methods map[string]map[codes.Code]interface{} // TODO: use metrics.Metric when it's exported
+	methods map[string]map[codes.Code]any // TODO: use metrics.Metric when it's exported
 }
 
 func (m *metric) with(
-	typ, method string, code codes.Code, new func(name string) interface{},
-) interface{} {
+	typ, method string, code codes.Code, new func(name string) any,
+) any {
 	m.mu.RLock() // try read lock first and promote to write lock if needed
-	var locked bool
+	var upgraded bool
 	defer func() {
-		if locked {
+		if upgraded {
 			m.mu.Unlock()
 		} else {
 			m.mu.RUnlock()
@@ -79,14 +79,26 @@ func (m *metric) with(
 	}()
 	methods, ok := m.methods[method]
 	if !ok {
-		if m.lock(&locked) || m.methods[method] == nil {
-			m.methods[method] = map[codes.Code]interface{}{}
+		upgraded = true
+		m.mu.RUnlock()
+		m.mu.Lock()
+
+		// r to w mutex upgrading is not atomic,
+		// so we need to check that another routine hasn't got here first
+		if m.methods[method] == nil {
+			m.methods[method] = map[codes.Code]any{}
 		}
 		methods = m.methods[method]
 	}
 	metric, ok := methods[code]
 	if !ok {
-		if m.lock(&locked) || methods[code] == nil {
+		wasUpgraded := upgraded
+		if !upgraded {
+			upgraded = true
+			m.mu.RUnlock()
+			m.mu.Lock()
+		}
+		if wasUpgraded || methods[code] == nil {
 			service, method := splitMethodName(method)
 			var b strings.Builder
 			b.Grow(1024) // should be enough for almost all metric names
@@ -107,16 +119,6 @@ func (m *metric) with(
 		metric = methods[code]
 	}
 	return metric
-}
-
-func (m *metric) lock(locked *bool) bool {
-	if *locked {
-		return true
-	}
-	m.mu.RUnlock()
-	m.mu.Lock()
-	*locked = true
-	return false
 }
 
 const noCode = math.MaxUint32

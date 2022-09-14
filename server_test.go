@@ -3,6 +3,7 @@ package grpcmetrics
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,30 +82,12 @@ func TestServerMetrics_InitializeMetrics(t *testing.T) {
 	)
 }
 
-func BenchmarkServerScrape_metrics(b *testing.B) {
-	m := newServerMetrics()
-	h := func(w http.ResponseWriter, r *http.Request) {
-		m.s.WritePrometheus(w)
-	}
-	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		h(httptest.NewRecorder(), r)
-	}
+func BenchmarkScrapeServer_metrics(b *testing.B) {
+	benchScrape(b, newServerMetrics().s)
 }
 
-func BenchmarkServerScrape_client_golang(b *testing.B) {
-	m := newServerMetrics_client_golang()
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(m)
-	h := promhttp.InstrumentMetricHandler(reg,
-		promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
-	)
-	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		h.ServeHTTP(httptest.NewRecorder(), r)
-	}
+func BenchmarkScrapeServer_client_golang(b *testing.B) {
+	benchScrape_client_golang(b, newServerMetrics_client_golang())
 }
 
 func BenchmarkUnaryServerInterceptor_metrics(b *testing.B) {
@@ -123,6 +106,30 @@ func BenchmarkStreamServerInterceptor_metrics(b *testing.B) {
 func BenchmarkStreamServerInterceptor_client_golang(b *testing.B) {
 	h := newServerMetrics_client_golang()
 	benchStreamServerInterceptor(b, h.StreamServerInterceptor())
+}
+
+func benchScrape(b *testing.B, m interface{ WritePrometheus(w io.Writer) }) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		m.WritePrometheus(w)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h(httptest.NewRecorder(), r)
+	}
+}
+
+func benchScrape_client_golang(b *testing.B, c prometheus.Collector) {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(c)
+	h := promhttp.InstrumentMetricHandler(reg,
+		promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
+	)
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	}
 }
 
 func benchUnaryServerInterceptor(b *testing.B, h grpc.UnaryServerInterceptor) {

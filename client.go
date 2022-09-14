@@ -59,19 +59,20 @@ func UnaryClientInterceptor(m *ClientMetrics) grpc.UnaryClientInterceptor {
 		invoker grpc.UnaryInvoker,
 		opts ...grpc.CallOption,
 	) error {
-		var started time.Time
+		var startedAt time.Time
 		if m.handling != nil {
-			started = time.Now()
+			startedAt = time.Now()
 		}
 		m.started.with(m.s, unary, fullMethod, noCode).Inc()
 		m.msgRecv.with(m.s, unary, fullMethod, noCode).Inc()
 		err := invoker(ctx, fullMethod, req, reply, cc, opts...)
-		m.handled.with(m.s, unary, fullMethod, status.Code(err)).Inc()
+		code := status.Code(err)
+		m.handled.with(m.s, unary, fullMethod, code).Inc()
 		if err == nil {
-			m.msgSent.with(m.s, unary, fullMethod, status.Code(err)).Inc()
+			m.msgSent.with(m.s, unary, fullMethod, code).Inc()
 		}
 		if m.handling != nil {
-			m.handling.with(m.s, unary, fullMethod).UpdateDuration(started)
+			m.handling.with(m.s, unary, fullMethod).UpdateDuration(startedAt)
 		}
 		return err
 	}
@@ -86,9 +87,9 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 		streamer grpc.Streamer,
 		opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
-		var started time.Time
+		var startedAt time.Time
 		if m.handling != nil {
-			started = time.Now()
+			startedAt = time.Now()
 		}
 		typ := streamType(desc.ServerStreams, desc.ClientStreams)
 		m.started.with(m.s, typ, fullMethod, noCode).Inc()
@@ -100,9 +101,10 @@ func StreamClientInterceptor(m *ClientMetrics) grpc.StreamClientInterceptor {
 		return &clientStream{
 			cs,
 			m,
-			typ, fullMethod,
-			started,
-		}, err
+			typ,
+			fullMethod,
+			startedAt,
+		}, nil
 	}
 }
 

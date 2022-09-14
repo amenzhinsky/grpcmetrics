@@ -10,8 +10,11 @@ Drop-in replacement for [go-grpc-prometheus](https://github.com/grpc-ecosystem/g
 
 ```go
 import (
+	"net/http"
+	
 	"google.golang.org/grpc"
 	"github.com/amenzhinsky/grpcmetrics"
+	"github.com/VictoriaMetrics/metrics"
 )
 
 m := grpcmetrics.NewServerMetrics()
@@ -40,6 +43,14 @@ http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 ### Client
 
 ```go
+import (
+	"net/http"
+
+	"google.golang.org/grpc"
+	"github.com/amenzhinsky/grpcmetrics"
+	"github.com/VictoriaMetrics/metrics"
+)
+
 m := grpcmetrics.NewClientMetrics()
 c, err := grpc.Dial("",
 	grpc.WithChainUnaryInterceptor(
@@ -62,27 +73,34 @@ http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 
 ### Benchmarks
 
-`benchcmp` vs `client_golang`.
+Benchmarks against [client_golang](github.com/grpc-ecosystem/go-grpc-prometheus) interceptors (MacBook Air M1).
 
 ```
-benchmark                                old ns/op     new ns/op     delta
-BenchmarkUnaryClientInterceptor_-12      139           94.6          -31.88%
-BenchmarkStreamClientInterceptor_-12     164           86.4          -47.37%
-BenchmarkServerScrape_-12                206090        1792          -99.13%
-BenchmarkUnaryServerInterceptor_-12      198           89.5          -54.72%
-BenchmarkStreamServerInterceptor_-12     212           107           -49.29%
+go test -run=none -bench=_client_golang$ -benchmem -benchtime=5s | sed s/_client_golang//g > old.txt
+go test -run=none -bench=_metrics$ -benchmem -benchtime=5s | sed s/_metrics//g > new.txt
+benchcmp old.txt new.txt
 
-benchmark                                old allocs     new allocs     delta
-BenchmarkUnaryClientInterceptor_-12      4              0              -100.00%
-BenchmarkStreamClientInterceptor_-12     6              2              -66.67%
-BenchmarkServerScrape_-12                267            9              -96.63%
-BenchmarkUnaryServerInterceptor_-12      5              0              -100.00%
-BenchmarkStreamServerInterceptor_-12     7              2              -71.43%
+benchmark                              old ns/op     new ns/op     delta
+BenchmarkScrapeClient-8                9191          553           -93.98%
+BenchmarkUnaryClientInterceptor-8      358           235           -34.44%
+BenchmarkStreamClientInterceptor-8     276           197           -28.58%
+BenchmarkScrapeServer-8                41107         542           -98.68%
+BenchmarkUnaryServerInterceptor-8      310           209           -32.72%
+BenchmarkStreamServerInterceptor-8     331           244           -26.40%
 
-benchmark                                old bytes     new bytes     delta
-BenchmarkUnaryClientInterceptor_-12      240           0             -100.00%
-BenchmarkStreamClientInterceptor_-12     264           96            -63.64%
-BenchmarkServerScrape_-12                60659         992           -98.36%
-BenchmarkUnaryServerInterceptor_-12      288           0             -100.00%
-BenchmarkStreamServerInterceptor_-12     328           80            -75.61%
+benchmark                              old allocs     new allocs     delta
+BenchmarkScrapeClient-8                65             9              -86.15%
+BenchmarkUnaryClientInterceptor-8      5              0              -100.00%
+BenchmarkStreamClientInterceptor-8     6              2              -66.67%
+BenchmarkScrapeServer-8                267            9              -96.63%
+BenchmarkUnaryServerInterceptor-8      5              0              -100.00%
+BenchmarkStreamServerInterceptor-8     7              2              -71.43%
+
+benchmark                              old bytes     new bytes     delta
+BenchmarkScrapeClient-8                36861         992           -97.31%
+BenchmarkUnaryClientInterceptor-8      288           0             -100.00%
+BenchmarkStreamClientInterceptor-8     264           96            -63.64%
+BenchmarkScrapeServer-8                59324         992           -98.33%
+BenchmarkUnaryServerInterceptor-8      288           0             -100.00%
+BenchmarkStreamServerInterceptor-8     328           80            -75.61%
 ```

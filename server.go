@@ -82,9 +82,9 @@ func UnaryServerInterceptor(m *ServerMetrics) grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		var started time.Time
+		var startedAt time.Time
 		if m.handling != nil {
-			started = time.Now()
+			startedAt = time.Now()
 		}
 		m.started.with(m.s, unary, info.FullMethod, noCode).Inc()
 		m.msgRecv.with(m.s, unary, info.FullMethod, noCode).Inc()
@@ -94,7 +94,7 @@ func UnaryServerInterceptor(m *ServerMetrics) grpc.UnaryServerInterceptor {
 			m.msgSent.with(m.s, unary, info.FullMethod, noCode).Inc()
 		}
 		if m.handling != nil {
-			m.handling.with(m.s, unary, info.FullMethod).UpdateDuration(started)
+			m.handling.with(m.s, unary, info.FullMethod).UpdateDuration(startedAt)
 		}
 		return res, err
 	}
@@ -107,9 +107,9 @@ func StreamServerInterceptor(m *ServerMetrics) grpc.StreamServerInterceptor {
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) error {
-		var started time.Time
+		var startedAt time.Time
 		if m.handling != nil {
-			started = time.Now()
+			startedAt = time.Now()
 		}
 		typ := streamType(info.IsServerStream, info.IsClientStream)
 		m.started.with(m.s, typ, info.FullMethod, noCode).Inc()
@@ -119,7 +119,7 @@ func StreamServerInterceptor(m *ServerMetrics) grpc.StreamServerInterceptor {
 		})
 		m.handled.with(m.s, typ, info.FullMethod, status.Code(err)).Inc()
 		if m.handling != nil {
-			m.handling.with(m.s, typ, info.FullMethod).UpdateDuration(started)
+			m.handling.with(m.s, typ, info.FullMethod).UpdateDuration(startedAt)
 		}
 		return err
 	}
